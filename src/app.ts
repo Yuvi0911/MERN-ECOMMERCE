@@ -1,6 +1,6 @@
 import express from 'express'
 
-import { connectDB } from './utils/features.js';
+import { connectDB, connectRedis } from './utils/features.js';
 
 import { errorMiddleware } from './middlewares/error.js';
 
@@ -8,7 +8,7 @@ import { errorMiddleware } from './middlewares/error.js';
 import NodeCache from 'node-cache';
 
 //config ki help se hum env file k variables ko use kr skte h
-import { config } from 'dotenv';
+import dotenv from 'dotenv';
 
 //morgan ki help se hum terminal pr request show krva skte h jo jo user api ki request krega.
 import morgan from 'morgan';
@@ -23,19 +23,36 @@ import Stripe from 'stripe';
 
 import cors from "cors";
 
+import { v2 as cloudinary } from 'cloudinary';
+
 const port = 3000;
 
-// require('dotenv').config({
-//     path:"./.env"
-// });
+dotenv.config({
+    path:"./.env"
+});
 
 //const port = process.env.PORT || 3000;
 
-//const mongoURI = process.env.MONGO_URI || "";
+const mongoURI = process.env.MONGO_URI || "";
 
-//connectDB(mongoURI);
+const redisURI = process.env.REDIS_URI || "";
 
-connectDB();
+// yadi redis ki cache me 4 hour k baad data apne aap remove ho jaiye ga yadi kuch change nhi kiya toh.
+// TTL(Time To Leave) => expiry time of data from cache.
+export const redisTTL = process.env.REDIS_TTL || 60 * 60 * 4;
+
+
+connectDB(mongoURI);
+export const redis = connectRedis(redisURI);
+
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+})
+
+
+// connectDB();
 
 export const stripe = new Stripe("sk_test_51OwJo1SBfptToIOgEUX7cTBpAKwLpRPdqEIiUnshrK2FZ1RgvxMih8JJCW0jIACCAiWR9tYrPaVJZoE0DJJEIRwI00WIzMH29h");
 
@@ -51,7 +68,11 @@ app.use(express.json());
 app.use(morgan("dev"));
 
 //Cross-Origin Resource Sharing => iski help se hum different domain, protocol ya port se web page pr request kr skte h.
-app.use(cors() );
+app.use(cors({
+    origin: [process.env.CLIENT_URL!],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+}) );
 
 
 app.get("/",(req,res)=>{

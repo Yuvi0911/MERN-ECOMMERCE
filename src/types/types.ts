@@ -14,6 +14,7 @@ export interface NewProductRequestBody {
     category: string;
     price: number;
     stock: number;
+    description: string;
 }
 
 
@@ -48,6 +49,7 @@ export type ControllerType =(
         product ?: boolean;
         order ?: boolean;
         admin ?: boolean;
+        review?: boolean;
         userId ?: string;
         orderId ?: string;
         productId ?: string | string[];
@@ -57,7 +59,7 @@ export type ControllerType =(
     export type OrderItemType = {
         name: string;
         photo: string;
-        proce: number;
+        price: number;
         quantity: number;
         productId: string;
     };
@@ -66,7 +68,7 @@ export type ControllerType =(
         city: string;
         state: string;
         country: string;
-        pinCode: Number;
+        pinCode: number;
     }
     export interface NewOrderRequestBody {
         shippingInfo: ShippingInfoType;

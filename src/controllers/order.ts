@@ -4,7 +4,7 @@ import { NewOrderRequestBody } from "../types/types.js";
 import { Order } from "../models/order.js";
 import { invalidateCache, reduceStock } from "../utils/features.js";
 import ErrorHandler from "../utils/utility-class.js";
-import { myCache } from "../app.js";
+import { myCache, redis, redisTTL } from "../app.js";
 
 
 //ye controller kisi bhi specific user k sbhi order show krdega uski id k basics pr
@@ -13,14 +13,17 @@ export const myOrders = TryCatch(async (req, res,next) => {
     //humne user ki id le li as user name
     const {id:user} = req.query;
 
-    let orders = [];
+    let orders;
 
     //hum iski `my-orders-${user}` jagah pr key bhi use kr skte h.
-    const key = `my-orders-${user}`
+    const key = `my-orders-${user}`;
+
+    orders = await redis.get(key);
 
     //yadi cache me data store hoga toh directly cache se data le lege.
-    if(myCache.has(key)){
-        orders = JSON.parse(myCache.get(`my-orders-${user}`) as string);
+    if(orders){
+        // orders = JSON.parse(myCache.get(`my-orders-${user}`) as string);
+        orders = JSON.parse(orders);
     }
     else{
         //hum specific user k order find krliye us user ki id de kr
@@ -28,7 +31,9 @@ export const myOrders = TryCatch(async (req, res,next) => {
 
         //orders me jo data aaya h ushe cache me store krva dege
         //har ek user k alag alag orders hoge toh sab k liye hum alag alag key use krege uska data find krne k liye.
-        myCache.set(`my-orders-${user}`,JSON.stringify(orders))
+        // myCache.set(`my-orders-${user}`,JSON.stringify(orders))
+
+        await redis.setex(key, redisTTL, JSON.stringify(orders));
     }
     
     return res.status(200).json({
@@ -42,12 +47,15 @@ export const allOrders = TryCatch(async(req, res, next) => {
 
     const key = `all-orders`;
 
-    let orders = [];
+    let orders;
+
+    orders = await redis.get(key);
 
     //yadi cache me data store hoga toh directly cache se data le lege.
-    if(myCache.has(key)){
+    if(orders){
         //as string ya ! in dono me se kuch bhi use kr skte h
-        orders = JSON.parse(myCache.get(key)!)
+        // orders = JSON.parse(myCache.get(key)!)
+        orders = JSON.parse(orders);
     }
     else{
         //sbhi user k orders ko find kr lege
@@ -56,7 +64,8 @@ export const allOrders = TryCatch(async(req, res, next) => {
         //populate vali command hum un orders k saath saath us user ka naam bhi de degi.
 
         //sbhi orders ko cache me store krva dege
-        myCache.set(key,JSON.stringify(orders));
+        // myCache.set(key,JSON.stringify(orders));
+        await redis.setex(key, redisTTL, JSON.stringify(orders));
     }
 
     return res.status(200).json({
@@ -73,8 +82,11 @@ export const getSingleOrder = TryCatch(async(req,res,next) => {
     //abki baar hum keval 1 order le ge  isliye order ko array nhi bnaye ge.
     let order;
 
-    if(myCache.has(key)){
-        order = JSON.parse(myCache.get(key) as string)
+    order = await redis.get(key);
+
+    if(order){
+        // order = JSON.parse(myCache.get(key) as string)
+        order = JSON.parse(order);
     }
     else{
         order = await Order.findById(id).populate("user","name");
@@ -83,7 +95,8 @@ export const getSingleOrder = TryCatch(async(req,res,next) => {
             return next(new ErrorHandler("Order Not Found",404));
         }
 
-        myCache.set(key,JSON.stringify(order));
+        // myCache.set(key,JSON.stringify(order));
+        await redis.setex(key, redisTTL, JSON.stringify(order));
     }
 
     return res.status(200).json({
@@ -117,7 +130,7 @@ export const newOrder = TryCatch(async(req: Request<{},{},NewOrderRequestBody>,r
     await reduceStock(orderItems);
 
     //hum cache me jo purana data store h ushe delete kre ge
-    invalidateCache({ product:true, order: true, admin: true, userId: user, productId: order.orderItems.map((i)=>String(i.productId))});
+    await invalidateCache({ product:true, order: true, admin: true, userId: user, productId: order.orderItems.map((i)=>String(i.productId))});
 
     return res.status(201).json({
         success: true,
@@ -147,7 +160,7 @@ export const processOrder = TryCatch(async (req,res,next) => {
 
     await order.save();
 
-    invalidateCache({ product: false,order: true,admin: true, userId: order.user, orderId: String(order._id),});
+    await invalidateCache({ product: false,order: true,admin: true, userId: order.user, orderId: String(order._id),});
 
     return res.status(200).json({ 
         success: true,
@@ -164,7 +177,7 @@ export const deleteOrder = TryCatch(async (req, res, next) =>{
 
     await order.deleteOne();
 
-    invalidateCache({ product: false,order: true,admin: true, userId: order.user, orderId: String(order._id),});
+    await invalidateCache({ product: false,order: true,admin: true, userId: order.user, orderId: String(order._id),});
 
     return res.status(200).json({
         success: true,

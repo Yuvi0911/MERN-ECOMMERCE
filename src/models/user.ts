@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-//validator ki help se hum email check kr skte h ki shi h ya nhi
+//validator package ki help se hum email check kr skte h ki shi h ya nhi
 import validator from "validator";
 
 interface IUser extends Document {

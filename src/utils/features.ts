@@ -2,13 +2,78 @@
 
 import mongoose from "mongoose";
 import { InvalidateCacheProps, OrderItemType } from "../types/types.js";
-import { myCache } from "../app.js";
+import { myCache, redis } from "../app.js";
 import { Product } from "../models/products.js";
 import { Order } from "../models/order.js";
 import { Document, Schema } from "mongoose";
+import {v2 as cloudinary, UploadApiResponse} from "cloudinary";
+import ErrorHandler from "./utility-class.js";
+import { Review } from "../models/review.js";
+import {Redis} from "ioredis";
 
-export const connectDB = () => {
-    mongoose.connect("mongodb+srv://thunderyuvi911:Rajput11@cluster0.zydhdyp.mongodb.net/",{
+const getBase64 = (file: Express.Multer.File) => `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+
+export const uploadFilesToCloudinary = async (files: Express.Multer.File[]) => {
+    // yadi hume keval 1 file upload krni ho toh cloudinary pr
+    // const result = await cloudinary.uploader.upload(getBase64(files[0]));
+
+    const uploadPromises = files.map(async(file)=>{
+        return new Promise<UploadApiResponse>((resolve, reject) => {
+           cloudinary.uploader.upload(
+                getBase64(file),(error, result) => {
+                    if(error) return reject(error);
+                    resolve(result!);
+                }
+            )
+        })
+    });
+
+    try {
+        const results = await Promise.all(uploadPromises);
+ 
+
+        return results.map((result) => ({
+            public_id: result.public_id,
+            url: result.secure_url,
+        }));
+
+    } catch (error) {
+        throw new Error("Error uploading files to cloudinary");
+    }
+}
+
+export const deleteFilesFromCloudinary = async(publicIds: string[])=>{
+    try{
+        const deletePromises = publicIds.map((publicId)=>{
+            return new Promise<void>((resolve, reject) => {
+                cloudinary.uploader.destroy(publicId, (error, result) => {
+                    if(error) return reject(error);
+                    resolve();
+                })
+            })
+        })
+
+
+        await Promise.all(deletePromises);
+        console.log("Files deleted successfully");
+    }
+    catch(error){
+        console.log("Error deleting files from cloudinary:", error);
+        throw new Error("Error deleting files to cloudinary");
+    }
+}
+
+export const connectRedis = (redisURI: string) => {
+    const redis = new Redis(redisURI);
+
+    redis.on("connect", () => console.log("Redis Connected"));
+    redis.on("error", (e) => console.log("Redis Error", e));
+
+    return redis;
+}
+
+export const connectDB = (mongoURI: string) => {
+    mongoose.connect(mongoURI,{
         dbName: "Ecom",
     })
     .then((c)=> console.log(`DB Connected to ${c.connection.host}`))
@@ -17,7 +82,13 @@ export const connectDB = () => {
 
 //Revalidate on New, Update, Delete Product and on New Order
 // hum jab bhi New, Update, Delete Product and on New Order krege toh humne jo data cache me phle se save kr rhka h ushe delete krege
-export const invalidateCache =  ({product, order, admin, userId, orderId, productId} : InvalidateCacheProps) =>{
+export const invalidateCache = async ({product, order, admin, review, userId, orderId, productId} : InvalidateCacheProps) =>{
+    // jab bhi review me change hoga kuch bhi toh cache ko invalidate krege.
+    if(review){
+        await redis.del([`reviews-${productId}`]);
+    }
+
+    // yadi product ki value update hogi toh purani product ki value jo ki cache me store h ushe delete kr dege.
     if(product){
         const productKeys: string[] = ["latest-products", "categories", "admin-products",`product-${productId}`];
 
@@ -35,15 +106,20 @@ export const invalidateCache =  ({product, order, admin, userId, orderId, produc
             productId.forEach((i) => productKeys.push(`product-${i}`))
         }
 
-        myCache.del(productKeys);
+        // myCache.del(productKeys);
+        await redis.del(productKeys)
     }
+     // yadi order ki value update hogi toh purani order ki value jo ki cache me store h ushe delete kr dege.
     if(order){
         const orderKeys: string[] = ["all-orders",`my-orders-${userId}`,`order-${orderId}`];
 
-        myCache.del(orderKeys);
+        // myCache.del(orderKeys);
+        await redis.del(orderKeys);
     }
+     // yadi admin ki value update hogi toh purani admin ki value jo ki cache me store h ushe delete kr dege.
     if(admin){
-        myCache.del(["admiin-stats", "admin-pie-charts", "admin-bar-charts", "admin-line-charts", ])
+        // myCache.del(["admin-stats", "admin-pie-charts", "admin-bar-charts", "admin-line-charts", ])
+        await redis.del(["admin-stats", "admin-pie-charts", "admin-bar-charts", "admin-line-charts", ])
     }
 };
 
@@ -141,4 +217,22 @@ export const getChartData = ({length, docArr, today, property}: FuncProps) => {
           })
 
           return data;
+}
+
+export const findAverageRatings = async (productId: mongoose.Types.ObjectId) => {
+    let totalRating = 0;
+
+    const reviews = await Review.find({ product: productId});
+
+    reviews.forEach((review) => {
+        totalRating += review.rating;
+    })
+
+    const averageRating = Math.floor(totalRating/reviews.length) || 0;
+
+    return{
+        numOfReviews: reviews.length,
+        ratings: averageRating,
+    }
+
 }

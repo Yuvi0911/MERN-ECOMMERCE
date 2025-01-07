@@ -24,19 +24,19 @@ return res.status(201).json({
 export const newCoupon = TryCatch(async (req, res, next) => {
 
     //hum coupon k schema me se destructuring kr k coupon aur amount lege
-    const {coupon, amount} = req.body;
+    const {code, amount} = req.body;
 
     //yadi coupon ya amount new hoga toh hum error send kr dege
-    if(!coupon || !amount){
+    if(!code || !amount){
         return next(new ErrorHandler("Please Enter Both coupon and amount", 400));
     }
 
     //mongodb me coupon create krdege coupon k code aur amount k saath.
-    await Coupon.create({ code: coupon, amount });
+    await Coupon.create({ code, amount });
 
     return res.status(201).json({
         success: true,
-        message: `Coupon ${coupon} created Successfully`,
+        message: `Coupon ${code} created Successfully`,
     })
 })
 
@@ -72,7 +72,40 @@ export const allCoupons = TryCatch(async(req, res, next) => {
     })
 })
 
+export const getCoupon = TryCatch(async(req, res, next)=> {
+    const {id} = req.params;
+    const coupon = await Coupon.findById(id);
+    if(!coupon){
+        return next(new ErrorHandler("Invalid Coupon ID", 400));
+    }
+    return res.status(200).json({
+        success: true,
+        coupon,
+    })
+})
+
+export const updateCoupon = TryCatch(async(req, res, next) => {
+
+    const {code, amount} = req.body;
+  
+    const coupon = await Coupon.findById(req.params.id);
+    
+    if(!coupon){
+        return next ( new ErrorHandler("Invalid Coupon Id",400));
+    }
+
+    if(code) coupon.code = code;
+    if(amount) coupon.amount = amount;
+
+    await coupon.save();
+    
+    return res.status(200).json({
+        success: true,
+        message: `Coupon ${coupon.code} Updated Successfully`,
+    })
+})
 export const deleteCoupon = TryCatch(async(req, res, next) => {
+    // ye params me se coupon ki id fetch krega aur ushe db me se delete krdeg
     const coupon = await Coupon.findByIdAndDelete(req.params.id);
     
     if(!coupon){
